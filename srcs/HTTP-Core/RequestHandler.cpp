@@ -2,48 +2,89 @@
 #include <fstream>
 #include <cstdio>
 #include <sys/stat.h>
+#include <dirent.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <cstring>
+#include <limits.h>
 
 RequestHandler::RequestHandler(const std::string& docRoot) : documentRoot(docRoot) {
+	// Convertir en path absolu
+	char cwd[PATH_MAX];
+	if (getcwd(cwd, sizeof(cwd)) != NULL) {
+		documentRoot = std::string(cwd) + "/" + docRoot;
+	}
+}
+
+std::string RequestHandler::resolvePath(const std::string& path) {
+	if (path.empty() || path[0] == '/') return path;
+	char cwd[PATH_MAX];
+	if (getcwd(cwd, sizeof(cwd)) != NULL) {
+		return std::string(cwd) + "/" + path;
+	}
+	return path;
 }
 
 void RequestHandler::setDocumentRoot(const std::string& root) {
 	documentRoot = root;
 }
 
-HttpResponse RequestHandler::handleRequest(const HttpRequest& request) {
+HttpResponse RequestHandler::handleRequest(const HttpRequest& request, const ServerConfig& server, const LocationConfig* location) {
 	// Validation de base
 	if (!request.isValid || !request.isComplete) {
 		return HttpResponse::badRequest();
 	}
 	
+	// Check body size
+	if (request.body.size() > server.getClientMaxBodySize()) {
+		return HttpResponse(413, "Request Entity Too Large");
+	}
+	
 	// Router selon la méthode HTTP (obligatoire selon sujet)
 	if (request.method == "GET") {
-		return handleGet(request);
+		return handleGet(request, server, location);
 	} else if (request.method == "POST") {
-		return handlePost(request);
+		return handlePost(request, server, location);
 	} else if (request.method == "DELETE") {
-		return handleDelete(request);
+		return handleDelete(request, server, location);
 	} else {
 		// Méthode non supportée
 		return HttpResponse::methodNotAllowed();
 	}
 }
 
-HttpResponse RequestHandler::handleGet(const HttpRequest& request) {
-	std::string filepath = documentRoot + request.uri;
+HttpResponse RequestHandler::handleGet(const HttpRequest& request, const ServerConfig& server, const LocationConfig* location) {
+	std::string root = resolvePath(location && !location->getRoot().empty() ? location->getRoot() : server.getRoot());
+	std::string filepath = root + request.uri;
 	
 	// Sécurité : empêcher l'accès en dehors du document root
 	if (request.uri.find("..") != std::string::npos) {
 		return HttpResponse::badRequest();
 	}
 	
-	// Si c'est un répertoire, chercher index.html
 	struct stat st;
 	if (stat(filepath.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
-		if (filepath[filepath.length() - 1] != '/') {
-			filepath += "/";
+		// Directory
+		std::string index = location ? location->getIndex() : server.getIndex();
+		if (!index.empty()) {
+			std::string indexPath = filepath + "/" + index;
+			if (fileExists(indexPath)) {
+				filepath = indexPath;
+			} else if (location && location->getAutoIndex()) {
+				return HttpResponse::ok(generateDirectoryListing(filepath, request.uri));
+			} else {
+				return HttpResponse::notFound();
+			}
+		} else if (location && location->getAutoIndex()) {
+			return HttpResponse::ok(generateDirectoryListing(filepath, request.uri));
+		} else {
+			return HttpResponse::notFound();
 		}
-		filepath += "index.html";
+	}
+	
+	// Check CGI
+	if (location && location->hasCGI(request.uri)) {
+		return executeCGI(request, server, location);
 	}
 	
 	// Vérifier que le fichier existe
@@ -53,7 +94,7 @@ HttpResponse RequestHandler::handleGet(const HttpRequest& request) {
 	
 	// Lire le fichier
 	std::string content = readFile(filepath);
-	if (content.empty()) {
+	if (content.empty() && errno != 0) {
 		return HttpResponse::internalServerError();
 	}
 	
@@ -64,14 +105,22 @@ HttpResponse RequestHandler::handleGet(const HttpRequest& request) {
 	return response;
 }
 
-HttpResponse RequestHandler::handlePost(const HttpRequest& request) {
-	// Selon le sujet : support des uploads et traitement de données
+HttpResponse RequestHandler::handlePost(const HttpRequest& request, const ServerConfig& server, const LocationConfig* location) {
+	// Check CGI
+	if (location && location->hasCGI(request.uri)) {
+		return executeCGI(request, server, location);
+	}
 	
-	// Pour un upload simple (sans multipart pour l'instant)
-	std::string uploadPath = documentRoot + "/uploads" + request.uri;
+	// Simple file upload
+	std::string uploadDir = resolvePath(location ? location->getUploadDir() : server.getUpload());
+	if (uploadDir.empty()) {
+		return HttpResponse::methodNotAllowed();
+	}
+	
+	std::string filepath = uploadDir + request.uri;
 	
 	// Créer le fichier avec le contenu du body
-	std::ofstream file(uploadPath.c_str(), std::ios::binary);
+	std::ofstream file(filepath.c_str(), std::ios::binary);
 	if (!file.is_open()) {
 		return HttpResponse::internalServerError();
 	}
@@ -83,8 +132,9 @@ HttpResponse RequestHandler::handlePost(const HttpRequest& request) {
 	return HttpResponse::created();
 }
 
-HttpResponse RequestHandler::handleDelete(const HttpRequest& request) {
-	std::string filepath = documentRoot + request.uri;
+HttpResponse RequestHandler::handleDelete(const HttpRequest& request, const ServerConfig& server, const LocationConfig* location) {
+	std::string root = resolvePath(location && !location->getRoot().empty() ? location->getRoot() : server.getRoot());
+	std::string filepath = root + request.uri;
 	
 	// Sécurité
 	if (request.uri.find("..") != std::string::npos) {
@@ -101,6 +151,75 @@ HttpResponse RequestHandler::handleDelete(const HttpRequest& request) {
 		return HttpResponse::noContent(); // 204 No Content
 	} else {
 		return HttpResponse::internalServerError();
+	}
+}
+
+std::string RequestHandler::generateDirectoryListing(const std::string& dirPath, const std::string& uri) {
+	std::string html = "<html><head><title>Index of " + uri + "</title></head><body><h1>Index of " + uri + "</h1><ul>";
+	
+	DIR* dir = opendir(dirPath.c_str());
+	if (dir) {
+		struct dirent* entry;
+		while ((entry = readdir(dir)) != NULL) {
+			std::string name = entry->d_name;
+			if (name != "." && name != "..") {
+				html += "<li><a href=\"" + uri + (uri.empty() || uri[uri.size()-1] == '/' ? "" : "/") + name + "\">" + name + "</a></li>";
+			}
+		}
+		closedir(dir);
+	}
+	html += "</ul></body></html>";
+	return html;
+}
+
+HttpResponse RequestHandler::executeCGI(const HttpRequest& request, const ServerConfig& server, const LocationConfig* location) {
+	std::string cgiPath = location->getCGI(request.uri);
+	std::string root = resolvePath(server.getRoot());
+	std::string scriptPath = root + request.uri;
+	
+	int pipefd[2];
+	if (pipe(pipefd) == -1) {
+		return HttpResponse::internalServerError();
+	}
+	
+	pid_t pid = fork();
+	if (pid == -1) {
+		close(pipefd[0]);
+		close(pipefd[1]);
+		return HttpResponse::internalServerError();
+	}
+	
+	if (pid == 0) {
+		// Child
+		close(pipefd[0]);
+		dup2(pipefd[1], STDOUT_FILENO);
+		close(pipefd[1]);
+		
+		// Set environment variables
+		setenv("REQUEST_METHOD", request.method.c_str(), 1);
+		setenv("SCRIPT_FILENAME", scriptPath.c_str(), 1);
+		std::ostringstream oss;
+		oss << request.body.size();
+		setenv("CONTENT_LENGTH", oss.str().c_str(), 1);
+		setenv("CONTENT_TYPE", request.headers.count("content-type") ? request.headers.at("content-type").c_str() : "", 1);
+		
+		execl(cgiPath.c_str(), cgiPath.c_str(), scriptPath.c_str(), NULL);
+		exit(1);
+	} else {
+		// Parent
+		close(pipefd[1]);
+		std::string output;
+		char buf[1024];
+		ssize_t n;
+		while ((n = read(pipefd[0], buf, sizeof(buf))) > 0) {
+			output.append(buf, n);
+		}
+		close(pipefd[0]);
+		waitpid(pid, NULL, 0);
+		
+		HttpResponse resp = HttpResponse::ok(output);
+		resp.setContentType("text/html");
+		return resp;
 	}
 }
 

@@ -4,13 +4,11 @@
 
 LocationConfigParser::LocationConfigParser()
 {
-	std::cout << "LocationConfigParser constructor called" << std::endl;
 	return ;
 }
 
 LocationConfigParser::LocationConfigParser(const LocationConfigParser &copy)
 {
-	std::cout << "LocationConfigParser constructor copy" << std::endl;
 	*this = copy;
 	return ;
 }
@@ -19,7 +17,6 @@ LocationConfigParser::LocationConfigParser(const LocationConfigParser &copy)
 
 LocationConfigParser::~LocationConfigParser()
 {
-	std::cout << "LocationConfigParser destructor called" << std::endl;
 	return ;
 }
 
@@ -56,7 +53,7 @@ void	LocationConfigParser::parseLocationDirectives(std::stringstream &ss, Locati
 		location.initCheckDirective(directive, false);
 	}
 	else if (directive == "cgi")
-        parseDirectiveTwoValues(ss, location, &LocationConfig::addCgi, directive);
+		parseDirectiveTwoValues(ss, location, &LocationConfig::addCgi, directive);
 	else
 		errorTypeExt("Unknown directive in configuration file!", -1);
 }

@@ -4,13 +4,11 @@
 
 ConfigParser::ConfigParser()
 {
-	std::cout << "ConfigParser constructor called" << std::endl;
 	return ;
 }
 
 ConfigParser::ConfigParser(const ConfigParser &copy)
 {
-	std::cout << "ConfigParser constructor copy" << std::endl;
 	*this = copy;
 	return ;
 }
@@ -19,7 +17,6 @@ ConfigParser::ConfigParser(const ConfigParser &copy)
 
 ConfigParser::~ConfigParser()
 {
-	std::cout << "ConfigParser destructor called" << std::endl;
 	return ;
 }
 
@@ -29,8 +26,8 @@ ConfigParser& ConfigParser::operator=(const ConfigParser& copy)
 {
 	if (this != &copy)
 	{
-        this->m_serverConfig = copy.m_serverConfig;
-        this->m_locationConfig = copy.m_locationConfig;
+		this->m_serverConfig = copy.m_serverConfig;
+		this->m_locationConfig = copy.m_locationConfig;
 	}
 	return (*this);
 }
@@ -133,4 +130,9 @@ void	ConfigParser::parseLocationBlock(const std::vector<std::string> &stack, Ser
 		else
 			this->m_locationConfig.parseLocationDirectives(ss, newLocation);
 	}
+}
+
+const std::vector<ServerConfig>& ConfigParser::getServers() const
+{
+	return m_servers;
 }

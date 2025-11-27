@@ -12,6 +12,7 @@ SRC_1 = srcs/main.cpp \
 		srcs/parsing/LocationConfigParser.cpp \
 		srcs/parsing/ServerConfig.cpp \
 		srcs/parsing/ServerConfigParser.cpp \
+		srcs/HTTP-Core/Client.cpp \
 		srcs/HTTP-Core/HttpParser.cpp \
 		srcs/HTTP-Core/HttpResponse.cpp \
 		srcs/HTTP-Core/RequestHandler.cpp \

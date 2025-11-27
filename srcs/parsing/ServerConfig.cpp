@@ -13,7 +13,6 @@ m_autoindex(false),
 m_min_client_size(1024),
 m_max_client_size(104857600)
 {
-	std::cout << "ServerConfig constructor called" << std::endl;
 	const char *directives[] = {
 		"listen", "server_name", "root", "index", "client_max_body_size",
 		"error_page", "http_methods", "cgi", "upload", "autoindex", "location"
@@ -39,7 +38,6 @@ m_cgi(copy.m_cgi),
 m_locations(copy.m_locations),
 m_hasDirective(copy.m_hasDirective)
 {
-	std::cout << "ServerConfig constructor copy" << std::endl;
 	return ;
 }
 
@@ -47,7 +45,6 @@ m_hasDirective(copy.m_hasDirective)
 
 ServerConfig::~ServerConfig()
 {
-	std::cout << "ServerConfig destructor called" << std::endl;
 	return ;
 }
 
@@ -57,14 +54,14 @@ ServerConfig& ServerConfig::operator=(const ServerConfig& copy)
 {
 	if (this != &copy)
 	{
-        this->m_listen = copy.m_listen;
-        this->m_server_name = copy.m_server_name;
-        this->m_root = copy.m_root;
-        this->m_index = copy.m_index;
-        this->m_client_max_size = copy.m_client_max_size;
-        this->m_errorsPages = copy.m_errorsPages;
-        this->m_httpMethods = copy.m_httpMethods;
-        this->m_cgi = copy.m_cgi;
+		this->m_listen = copy.m_listen;
+		this->m_server_name = copy.m_server_name;
+		this->m_root = copy.m_root;
+		this->m_index = copy.m_index;
+		this->m_client_max_size = copy.m_client_max_size;
+		this->m_errorsPages = copy.m_errorsPages;
+		this->m_httpMethods = copy.m_httpMethods;
+		this->m_cgi = copy.m_cgi;
 		this->m_upload = copy.m_upload;
 		this->m_autoindex = copy.m_autoindex;
 		this->m_locations = copy.m_locations;
@@ -98,7 +95,7 @@ void	ServerConfig::validateIP(const std::string &listen)
 	if (listen[0] == '0' && listen.size() > 1)
 		errorTypeExt("Listen: Your IP block must not start with 0 if it contains more than 1 digit: " + listen, -3);
 	size_t part = std::atoi(listen.c_str());
-	if (part < 1 || part > 255)
+	if (part > 255)
 		errorTypeExt("Listen: A block of your IP does not match the required typing, here is the block: " + listen, -3);
 	return ;
 }
@@ -146,7 +143,6 @@ void	ServerConfig::addListen(const std::string &listen)
 		{
 			countBlock++;
 			std::string tmp = listen_tmp.substr(0, i);
-			std::cout << tmp << "i: " << i << std::endl;
 			this->validateIP(tmp);
 			listen_tmp = listen_tmp.substr(i + 1, listen_tmp.size());
 			i = -1;
@@ -283,6 +279,11 @@ size_t ServerConfig::getClientSize(void) const
 	return (this->m_client_max_size);
 }
 
+size_t ServerConfig::getClientMaxBodySize(void) const
+{
+	return (this->m_client_max_size);
+}
+
 std::map<size_t, std::string>::const_iterator ServerConfig::getErrorsPages(size_t code) const
 {
 	return (this->m_errorsPages.find(code));
@@ -311,5 +312,5 @@ bool	ServerConfig::getAutoIndex(void) const
 
 const std::vector<LocationConfig>& ServerConfig::getLocations() const
 {
-    return this->m_locations;
+	return this->m_locations;
 }

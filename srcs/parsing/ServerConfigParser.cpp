@@ -4,13 +4,11 @@
 
 ServerConfigParser::ServerConfigParser()
 {
-	std::cout << "ServerConfigParser constructor called" << std::endl;
 	return ;
 }
 
 ServerConfigParser::ServerConfigParser(const ServerConfigParser &copy)
 {
-	std::cout << "ServerConfigParser constructor copy" << std::endl;
 	*this = copy;
 	return ;
 }
@@ -19,7 +17,6 @@ ServerConfigParser::ServerConfigParser(const ServerConfigParser &copy)
 
 ServerConfigParser::~ServerConfigParser()
 {
-	std::cout << "ServerConfigParser destructor called" << std::endl;
 	return ;
 }
 
@@ -42,7 +39,6 @@ void	ServerConfigParser::parseServerDirectives(std::stringstream &ss, ServerConf
 	std::string directive;
 	ss.seekg(0);
 	ss >> directive;
-	std::cout << "1- ICI: " << directive << std::endl;
 	if (directive == "listen")
 		parseAddDirectiveSimple(ss, server, &ServerConfig::addListen, directive);
 	else if (directive == "server_name")
@@ -65,7 +61,7 @@ void	ServerConfigParser::parseServerDirectives(std::stringstream &ss, ServerConf
 			server.initCheckDirective(directive, false);
 		}
 	else if (directive == "cgi")
-        parseDirectiveTwoValues(ss, server, &ServerConfig::addCGI, directive);
+		parseDirectiveTwoValues(ss, server, &ServerConfig::addCGI, directive);
 	else if (directive.empty())
 		return ;
 	else

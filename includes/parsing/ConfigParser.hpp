@@ -21,6 +21,7 @@ class ConfigParser
 		void	parseConfigFile(char *argv);
 		void	parseServerBlock(const std::vector<std::string> &stack, size_t &c_index, bool &serverOn);
 		void	parseLocationBlock(const std::vector<std::string> &stack, ServerConfig &server, const std::string &path, size_t &c_index, bool &locationOn);
+		const std::vector<ServerConfig>& getServers() const;
 };
 
 #endif

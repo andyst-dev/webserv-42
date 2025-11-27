@@ -2,27 +2,26 @@
 
 /*------------------------------- CONSTRUCTOR --------------------------------*/
 
-WebServ::WebServ()
+WebServ::WebServ(const std::vector<ServerConfig>& servers) : m_servers(servers), m_handler("./www")
 {
-	std::cout << "WebServ constructor called" << std::endl;
-	return ;
+	setupSocket();
 }
 
 WebServ::WebServ(const WebServ &copy) : 
 m_servers(copy.m_servers),
 m_socketToServer(copy.m_socketToServer)
 {
-	std::cout << "WebServ constructor copy" << std::endl;
 	*this = copy;
-	return ;
 }
 
 /*------------------------------- DESTRUCTOR --------------------------------*/
 
 WebServ::~WebServ()
 {
-	std::cout << "WebServ destructor called" << std::endl;
-	return ;
+	for (size_t i = 0; i < m_clients.size(); ++i)
+		delete m_clients[i];
+	for (size_t i = 0; i < m_sockets.size(); ++i)
+		close(m_sockets[i]);
 }
 
 /*------------------------------- OVERLOAD OPERATOR --------------------------------*/
@@ -69,12 +68,140 @@ int	WebServ::createSocket(ServerConfig &server)
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(port);
 	inet_pton(AF_INET, ip.c_str(), &addr.sin_addr);
-	if (bind(sockfd, (struct sockaddr*)&addr, sizeof(addr)) == -1)
+	if (bind(sockfd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+		perror("bind");
 		throw std::runtime_error("Bind failed on " + listenStr);
+	}
 	if (listen(sockfd, 128) == -1)
 		throw std::runtime_error("Listen failed");
+	// Set non-blocking
+	fcntl(sockfd, F_SETFL, O_NONBLOCK);
 	this->m_sockets.push_back(sockfd);
+	std::cout << "Listening on " << listenStr << std::endl;
 	return (sockfd);
+}
+
+void WebServ::run()
+{
+	std::cout << "Starting run loop" << std::endl;
+	std::vector<pollfd> fds;
+	for (size_t i = 0; i < m_sockets.size(); ++i)
+	{
+		pollfd pfd;
+		pfd.fd = m_sockets[i];
+		pfd.events = POLLIN;
+		pfd.revents = 0;
+		fds.push_back(pfd);
+	}
+
+	while (true)
+	{
+		try {
+			// Add client fds
+			size_t serverCount = m_sockets.size();
+			for (size_t i = 0; i < m_clients.size(); ++i)
+			{
+				pollfd pfd;
+				pfd.fd = m_clients[i]->getFd();
+				pfd.events = POLLIN;
+				if (m_clients[i]->isRequestComplete() && !m_clients[i]->isResponseSent())
+					pfd.events |= POLLOUT;
+				pfd.revents = 0;
+				fds.push_back(pfd);
+			}
+
+			int ret = poll(&fds[0], fds.size(), -1);
+			if (ret < 0)
+			{
+				perror("poll error");
+				break;
+			}
+			if (ret == 0)
+			{
+				std::cout << "poll timeout" << std::endl;
+				continue;
+			}
+
+			size_t fdIndex = 0;
+			// Handle server sockets
+			for (size_t i = 0; i < serverCount; ++i, ++fdIndex)
+			{
+				if (fds[fdIndex].revents & POLLIN)
+				{
+					acceptClient(m_sockets[i]);
+				}
+			}
+
+			// Handle clients
+			for (size_t i = 0; i < m_clients.size(); ++i, ++fdIndex)
+			{
+				Client* client = m_clients[i];
+				if (fds[fdIndex].revents & POLLIN && !client->isRequestComplete())
+				{
+					client->receiveData();
+				}
+				if (client->isRequestComplete() && !client->isResponseSent() && (fds[fdIndex].revents & POLLOUT))
+				{
+					handleClient(client);
+					client->sendResponse();
+					removeClient(client);
+					--i; // Adjust index
+					--fdIndex;
+				}
+			}
+
+			// Resize fds to server count
+			fds.resize(serverCount);
+		} catch (const std::exception& e) {
+			std::cerr << "Exception in run: " << e.what() << std::endl;
+			break;
+		}
+	}
+}
+
+void WebServ::acceptClient(int serverFd)
+{
+	struct sockaddr_in clientAddr;
+	socklen_t addrLen = sizeof(clientAddr);
+	int clientFd = accept(serverFd, (struct sockaddr*)&clientAddr, &addrLen);
+	if (clientFd < 0)
+	{
+		perror("accept");
+		return;
+	}
+	fcntl(clientFd, F_SETFL, O_NONBLOCK);
+	char ip[INET_ADDRSTRLEN];
+	inet_ntop(AF_INET, &clientAddr.sin_addr, ip, INET_ADDRSTRLEN);
+	int port = ntohs(clientAddr.sin_port);
+	std::cout << "Accepted client " << ip << ":" << port << std::endl;
+	Client* client = new Client(clientFd, serverFd, ip, port);
+	m_clients.push_back(client);
+}
+
+void WebServ::handleClient(Client* client)
+{
+	const HttpRequest& req = client->getRequest();
+	// Resolve server and location
+	std::string host = req.headers.count("Host") ? req.headers.at("Host") : "";
+	ServerConfig* server = resolveServer(host, client->getServerFd());
+	if (!server)
+		server = &m_servers[0];
+	LocationConfig* location = resolveLocation(req.uri, *server);
+	HttpResponse resp = m_handler.handleRequest(req, *server, location);
+	client->setResponse(resp);
+}
+
+void WebServ::removeClient(Client* client)
+{
+	for (std::vector<Client*>::iterator it = m_clients.begin(); it != m_clients.end(); ++it)
+	{
+		if (*it == client)
+		{
+			delete client;
+			m_clients.erase(it);
+			break;
+		}
+	}
 }
 
 ServerConfig* WebServ::resolveServer(const std::string &host, int socket)
@@ -181,15 +308,15 @@ std::string WebServ::getMime(const std::string &uri)
 
 int	WebServ::getStatusError(const std::string &uri, const std::string &method, LocationConfig *location, ServerConfig *server)
 {
-    if (location && !location->isMethodAllowed(method))
-        return (405);
-    else if (!location && !server->isMethodAllowed(method))
-        return (405);
-    
-    std::string finalPath = buildPath(uri, location, server);
-    if (access(finalPath.c_str(), F_OK) != 0)
-        return (404);   
-    if (access(finalPath.c_str(), R_OK) != 0)
-        return (403);
-    return (200);
+	if (location && !location->isMethodAllowed(method))
+		return (405);
+	else if (!location && !server->isMethodAllowed(method))
+		return (405);
+
+	std::string finalPath = buildPath(uri, location, server);
+	if (access(finalPath.c_str(), F_OK) != 0)
+		return (404);   
+	if (access(finalPath.c_str(), R_OK) != 0)
+		return (403);
+	return (200);
 }

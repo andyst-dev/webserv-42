@@ -53,6 +53,7 @@ class ServerConfig
 		std::string	getServerName(void) const;
 		std::string getRoot(void) const;
 		std::string getIndex(void) const;
+		size_t getClientMaxBodySize(void) const;
 		size_t getClientSize(void) const;
 		std::map<size_t, std::string>::const_iterator getErrorsPages(size_t code) const;
 		std::string	getHTTPMethods(size_t index) const;

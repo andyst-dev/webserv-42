@@ -9,7 +9,6 @@ m_index(""),
 m_upload(""),
 m_autoindex(false)
 {
-    std::cout << "Default constructor called" << std::endl;
 	const char *directives[] = {
 		"path", "root", "index", "http_methods", "cgi", "upload", "autoindex"
 	};
@@ -20,7 +19,6 @@ m_autoindex(false)
 
 LocationConfig::LocationConfig(const LocationConfig &copy)
 {
-    std::cout << "Name constructor called" << std::endl;
 	this->m_path = copy.m_path;
 	this->m_root = copy.m_root;
 	this->m_upload = copy.m_upload;
@@ -35,7 +33,6 @@ LocationConfig::LocationConfig(const LocationConfig &copy)
 
 LocationConfig::~LocationConfig()
 {
-    std::cout << "Destructor called" << std::endl;
 	return ;
 }
 
@@ -43,8 +40,8 @@ LocationConfig::~LocationConfig()
 
 LocationConfig& LocationConfig::operator=(const LocationConfig& copy)
 {
-    if (this != &copy)
-    {
+	if (this != &copy)
+	{
 		this->m_path = copy.m_path;
 		this->m_root = copy.m_root;
 		this->m_upload = copy.m_upload;
@@ -52,8 +49,8 @@ LocationConfig& LocationConfig::operator=(const LocationConfig& copy)
 		this->m_httpMethods = copy.m_httpMethods;
 		this->m_cgi = copy.m_cgi;
 		this->m_hasDirective = copy.m_hasDirective;
-    }
-    return (*this);
+	}
+	return (*this);
 }
 
 //------------------------------- FUNCTIONS --------------------------------*/
@@ -181,4 +178,30 @@ std::string	LocationConfig::getCGIHandler(const std::string &index) const
 {
 	std::map<std::string, std::string>::const_iterator it = this->m_cgi.find(index);
 	return (it != this->m_cgi.end() ? it->second : "");
+}
+
+std::string LocationConfig::getIndex(void) const
+{
+	return (this->m_index);
+}
+
+std::string	LocationConfig::getUploadDir(void) const
+{
+	return (this->m_upload);
+}
+
+bool LocationConfig::hasCGI(const std::string& uri) const
+{
+	size_t dot = uri.find_last_of('.');
+	if (dot == std::string::npos) return false;
+	std::string ext = uri.substr(dot);
+	return m_cgi.find(ext) != m_cgi.end();
+}
+
+std::string LocationConfig::getCGI(const std::string& uri) const
+{
+	size_t dot = uri.find_last_of('.');
+	if (dot == std::string::npos) return "";
+	std::string ext = uri.substr(dot);
+	return getCGIHandler(ext);
 }

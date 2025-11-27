@@ -25,7 +25,7 @@ public:
 		std::cout << "Headers:" << std::endl;
 		
 		for (std::map<std::string, std::string>::const_iterator it = headers.begin(); 
-			 it != headers.end(); ++it) {
+			it != headers.end(); ++it) {
 			std::cout << "  " << it->first << ": " << it->second << std::endl;
 		}
 		

@@ -26,14 +26,14 @@ template<typename T1, typename T2>
 void	GenericConfigParser<ConfigType>::parseDirectiveTwoValues(std::stringstream &ss, ConfigType &config, 
 					void (ConfigType::*setter)(T1, T2), const std::string& directive)
 {
-    std::string value1, value2;
-    if (!(ss >> value1 >> value2))
-        errorTypeExt(directive + ": Missing values!", -1);
-    if (!value2.empty() && value2[value2.size() - 1] == ';')
-        value2.resize(value2.size() - 1);
+	std::string value1, value2;
+	if (!(ss >> value1 >> value2))
+		errorTypeExt(directive + ": Missing values!", -1);
+	if (!value2.empty() && value2[value2.size() - 1] == ';')
+		value2.resize(value2.size() - 1);
 	else
-        errorTypeExt(directive + ": ';' missing at the end", -2);
-    if (directive == "error_page")
+		errorTypeExt(directive + ": ';' missing at the end", -2);
+	if (directive == "error_page")
 	{
 		for (size_t i = 0; i < value1.length(); i++)
 		{
@@ -51,26 +51,26 @@ template<typename Container>
 void GenericConfigParser<ConfigType>::parseDirectiveMultipleValues(std::stringstream &ss, ConfigType &config,
 					void (ConfigType::*adder)(const typename Container::value_type&), const std::string& directive)
 {
-    std::string value;
-    bool foundSemicolon = false;
-    
+	std::string value;
+	bool foundSemicolon = false;
+
     while (ss >> value)
 	{
-        if (!value.empty() && value[value.size() - 1] == ';')
+		if (!value.empty() && value[value.size() - 1] == ';')
 		{
-            value.resize(value.size() - 1);
-            foundSemicolon = true;
-            if (!value.empty() && (value == "GET" || value == "POST" || value == "DELETE"))
+			value.resize(value.size() - 1);
+			foundSemicolon = true;
+			if (!value.empty() && (value == "GET" || value == "POST" || value == "DELETE"))
 			{
-                (config.*adder)(value);
+				(config.*adder)(value);
 			}
 			else
 				errorTypeExt(directive + ": Problem with this directive!", -1);
-            break;
-        }
+			break;
+		}
 		if (value == "GET" || value == "POST" || value == "DELETE")
-        	(config.*adder)(value);
-    }
-    if (!foundSemicolon)
-        errorTypeExt(directive + ": ';' missing at the end", -2);
+			(config.*adder)(value);
+	}
+	if (!foundSemicolon)
+		errorTypeExt(directive + ": ';' missing at the end", -2);
 }
