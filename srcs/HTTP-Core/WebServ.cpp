@@ -61,6 +61,12 @@ int	WebServ::createSocket(ServerConfig &server)
 	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sockfd == -1)
 		throw std::runtime_error("Socket creation failed");
+	int opt = 1;
+	if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1)
+	{
+		close(sockfd);
+		throw std::runtime_error("setsockopt failed");
+	}
 	std::string listenStr = server.getListen();
 	std::string ip = listenStr.substr(0, listenStr.find(':'));
 	size_t port = std::atoi(listenStr.substr(listenStr.find(':') + 1, listenStr.size()).c_str());
@@ -84,20 +90,20 @@ int	WebServ::createSocket(ServerConfig &server)
 void WebServ::run()
 {
 	std::cout << "Starting run loop" << std::endl;
-	std::vector<pollfd> fds;
-	for (size_t i = 0; i < m_sockets.size(); ++i)
-	{
-		pollfd pfd;
-		pfd.fd = m_sockets[i];
-		pfd.events = POLLIN;
-		pfd.revents = 0;
-		fds.push_back(pfd);
-	}
 
 	while (true)
 	{
 		try {
-			// Add client fds
+			std::vector<pollfd> fds;
+			for (size_t i = 0; i < m_sockets.size(); ++i)
+			{
+				pollfd pfd;
+				pfd.fd = m_sockets[i];
+				pfd.events = POLLIN;
+				pfd.revents = 0;
+				fds.push_back(pfd);
+			}
+
 			size_t serverCount = m_sockets.size();
 			for (size_t i = 0; i < m_clients.size(); ++i)
 			{
@@ -110,6 +116,9 @@ void WebServ::run()
 				fds.push_back(pfd);
 			}
 
+			if (fds.empty())
+				break;
+
 			int ret = poll(&fds[0], fds.size(), -1);
 			if (ret < 0)
 			{
@@ -117,41 +126,42 @@ void WebServ::run()
 				break;
 			}
 			if (ret == 0)
-			{
-				std::cout << "poll timeout" << std::endl;
 				continue;
-			}
 
-			size_t fdIndex = 0;
-			// Handle server sockets
-			for (size_t i = 0; i < serverCount; ++i, ++fdIndex)
+			for (size_t i = 0; i < serverCount; ++i)
 			{
-				if (fds[fdIndex].revents & POLLIN)
-				{
+				if (fds[i].revents & POLLIN)
 					acceptClient(m_sockets[i]);
-				}
 			}
 
-			// Handle clients
-			for (size_t i = 0; i < m_clients.size(); ++i, ++fdIndex)
+			for (size_t i = 0; i < m_clients.size(); )
 			{
+				size_t fdIndex = serverCount + i;
+				if (fdIndex >= fds.size())
+					break;
+
 				Client* client = m_clients[i];
-				if (fds[fdIndex].revents & POLLIN && !client->isRequestComplete())
-				{
+				bool remove = false;
+
+				if ((fds[fdIndex].revents & POLLIN) && !client->isRequestComplete())
 					client->receiveData();
-				}
-				if (client->isRequestComplete() && !client->isResponseSent() && (fds[fdIndex].revents & POLLOUT))
+
+				if (client->isRequestComplete() && !client->isResponseSent())
 				{
 					handleClient(client);
 					client->sendResponse();
-					removeClient(client);
-					--i; // Adjust index
-					--fdIndex;
+					remove = true;
 				}
-			}
+				else if (client->isResponseSent() || (fds[fdIndex].revents & (POLLERR | POLLHUP | POLLNVAL)))
+				{
+					remove = true;
+				}
 
-			// Resize fds to server count
-			fds.resize(serverCount);
+				if (remove)
+					removeClient(client);
+				else
+					++i;
+			}
 		} catch (const std::exception& e) {
 			std::cerr << "Exception in run: " << e.what() << std::endl;
 			break;
@@ -186,7 +196,7 @@ void WebServ::handleClient(Client* client)
 	ServerConfig* server = resolveServer(host, client->getServerFd());
 	if (!server)
 		server = &m_servers[0];
-	LocationConfig* location = resolveLocation(req.uri, *server);
+	const LocationConfig* location = resolveLocation(req.uri, *server);
 	HttpResponse resp = m_handler.handleRequest(req, *server, location);
 	client->setResponse(resp);
 }
@@ -221,36 +231,31 @@ ServerConfig* WebServ::resolveServer(const std::string &host, int socket)
 	}
 }
 
-LocationConfig* WebServ::resolveLocation(const std::string &uri, ServerConfig server)
+const LocationConfig* WebServ::resolveLocation(const std::string &uri, ServerConfig &server)
 {
-	std::vector<LocationConfig> locationsServers = server.getLocations();
-	size_t occurence = 0;
-	size_t tmp = 0;
-	size_t k = 0;
+	const std::vector<LocationConfig>& locationsServers = server.getLocations();
+	size_t bestIndex = 0;
+	size_t bestLength = 0;
+	bool found = false;
+
 	for (size_t i = 0; i < locationsServers.size(); i++)
 	{
-		size_t countFind = 0;
-		size_t countFind2 = uri.find_first_of('/', countFind + 1);
-		if (locationsServers[i].getPath() == uri)
-			return (&locationsServers[i]);
-		while (locationsServers[i].getPath().compare(countFind, countFind2, uri.substr(countFind, countFind2)) == 0)
+		const std::string path = locationsServers[i].getPath();
+		if (path.empty())
+			continue;
+		if (uri.compare(0, path.size(), path) == 0 && path.size() >= bestLength)
 		{
-			tmp++;
-			if (tmp > occurence)
-			{
-				k = i;
-				occurence++;
-			}
-			countFind += uri.find_first_of('/', countFind + 1);
-			countFind2 += uri.find_first_of('/', countFind + 1);
+			bestIndex = i;
+			bestLength = path.size();
+			found = true;
 		}
 	}
-	if (occurence > 0)
-		return (&locationsServers[k]);
+	if (found)
+		return (&locationsServers[bestIndex]);
 	return (NULL);
 }
 
-std::string WebServ::buildPath(const std::string &uri, LocationConfig *location, ServerConfig *server)
+std::string WebServ::buildPath(const std::string &uri, const LocationConfig *location, ServerConfig *server)
 {
 	if (!location || location->getRoot().empty())
 		return (server->getRoot() + uri);

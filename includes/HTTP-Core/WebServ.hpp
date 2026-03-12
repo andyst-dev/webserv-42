@@ -26,8 +26,8 @@ class WebServ
 		RequestHandler m_handler;
 		void	setupSocket(void);
 		ServerConfig* resolveServer(const std::string &host, int socket);
-		LocationConfig* resolveLocation(const std::string &uri, ServerConfig server);
-		std::string buildPath(const std::string &uri, LocationConfig *location, ServerConfig *server);
+		const LocationConfig* resolveLocation(const std::string &uri, ServerConfig &server);
+		std::string buildPath(const std::string &uri, const LocationConfig *location, ServerConfig *server);
 		void acceptClient(int serverFd);
 		void handleClient(Client* client);
 		void removeClient(Client* client);

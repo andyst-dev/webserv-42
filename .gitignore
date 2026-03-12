@@ -1,0 +1,12 @@
+# build artifacts
+obj/
+webserv
+*.o
+*.out
+
+# core dumps
+core
+core.*
+
+# macOS / editor noise
+.DS_Store
